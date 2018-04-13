@@ -1,7 +1,4 @@
-# SalesForecastR
-My R code for Sales Forecasting
 ## https://www.dataiku.com/learn/guide/code/r/time_series.html
-##https://badrit.com/blog/2017/5/29/sales-forecasting#.Ws3URpch2Uk
 
 library(readxl)
 library(forecast)
@@ -44,3 +41,12 @@ lines(test.items)
 
 rmse_tbats <- sqrt(mean((f_tbats$mean - test.items)^2, na.rm = TRUE))
 rmse_tbats
+
+##Results
+barplot(c(ETS=m_ets$aic, ARIMA=m_aa$aic, TBATS=m_tbats$AIC),
+        col="light blue",
+        ylab="AIC")
+
+barplot(c(ETS=rmse_ets, ARIMA=rmse_aa, TBATS=rmse_tbats),
+        col="light blue",
+        ylab="RMSE")
