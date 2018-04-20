@@ -5,16 +5,17 @@ library(forecast)
 library(dplyr)
 
 data<-read_excel("Time Series/Items.xlsx", col_types = c("date", "numeric"))
+plot(data[,2])
 
 N = ceiling(0.75*nrow(data))
 items=pull(data,Items)
 
-ts_items = ts(items[1:N], frequency=12)
-plot(ts_items)
+train.items = ts(items[1:N], frequency=12)
 test.items <- ts(c(rep(NA, N), items[(N+1):NROW(items)]), frequency=12)
+plot(train.items)
 
 ##ets
-m_ets = ets(ts_items)
+m_ets = ets(train.items)
 f_ets = forecast(m_ets, h=nrow(data)-N) # forecast to test set into the future
 
 plot(f_ets)
@@ -24,7 +25,7 @@ rmse_ets <- sqrt(mean((f_ets$mean - test.items)^2, na.rm = TRUE))
 rmse_ets
 
 ## Auto Arima
-m_aa = auto.arima(ts_items)
+m_aa = auto.arima(train.items)
 f_aa = forecast(m_aa, h=nrow(data)-N+1)
 plot(f_aa)
 lines(test.items)
@@ -33,7 +34,7 @@ rmse_aa <- sqrt(mean((f_aa$mean - test.items)^2, na.rm = TRUE))
 rmse_aa
 
 ## TBATS
-m_tbats = tbats(ts_items)
+m_tbats = tbats(train.items)
 f_tbats = forecast(m_tbats, h=nrow(data)-N)
 plot(f_tbats)
 lines(test.items)
@@ -41,7 +42,7 @@ lines(test.items)
 rmse_tbats <- sqrt(mean((f_tbats$mean - test.items)^2, na.rm = TRUE))
 rmse_tbats
 
-##Results
+##Aggregation of results
 barplot(c(ETS=m_ets$aic, ARIMA=m_aa$aic, TBATS=m_tbats$AIC),
         col="light blue",
         ylab="AIC")
