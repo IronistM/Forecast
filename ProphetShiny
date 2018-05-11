@@ -1,0 +1,172 @@
+library(shiny)
+library(shinythemes)
+library(readr)
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(DT)
+library(tools)
+library(prophet)
+
+# Define UI for application that plots features of movies
+ui <- fluidPage(
+  
+  titlePanel("Forecasting", windowTitle = "Forecasting"),
+  
+  # Sidebar layout with a input and output definitions
+  sidebarLayout(
+    
+    # Inputs
+    sidebarPanel(
+      
+      h3("Load File (Only csv files and only time series per day)"),      
+      
+      fileInput("file1", "Choose CSV File",
+                accept = c(
+                  "text/csv",
+                  "text/comma-separated-values,text/plain",
+                  ".csv")),
+      
+      checkboxInput("header", "Header", TRUE),
+    
+      h3("Select Variables"),      # Third level header: Plotting
+      
+      # Select variable for date 
+      selectInput(inputId = "datevar", 
+                  label = "Date:",
+                  choices = names(df)),
+      
+      # Select variable for Time Series 
+      selectInput(inputId = "tsvar", 
+                  label = "Time Series:",
+                  choices = names(df)),
+      
+      # Set forecasting horizon
+      sliderInput(inputId = "horizon", 
+                  label = "Days ahead for forecasting:", 
+                  min = 0, max = 100, 
+                  value = 30),
+      #Parameters
+      h3("Select Parameters"), 
+      sliderInput(inputId = "train.size", 
+                  label = "Training sample size(%):", 
+                  min = 0, max = 100, 
+                  value = 80),
+      # Built with Shiny by RStudio
+      br(),
+      h5("Built with",
+         img(src = "https://www.rstudio.com/wp-content/uploads/2014/04/shiny.png", height = "30px"),
+         "by",
+         img(src = "https://www.rstudio.com/wp-content/uploads/2014/07/RStudio-Logo-Blue-Gray.png", height = "30px"),
+         ".")
+      
+    ),
+    
+    # Output:
+    mainPanel(
+      
+      tabsetPanel(id = "tabspanel", type = "tabs",
+                  tabPanel(title = "File Content", 
+                           tableOutput("contents")),
+                           
+                  tabPanel(title = "Plot", 
+                           plotOutput(outputId = "tseriesplot")),
+                           
+                  tabPanel(title = "Evaluation", 
+                           tableOutput("evaluation")),
+                  tabPanel(title = "Forecasting with Prophet", 
+                           tableOutput("forecasting"))
+                  
+                  
+      )
+    )
+  )
+)
+
+# Define server function required to create the scatterplot
+server <- function(input, output, session) {
+  
+  
+   # Create scatterplot object the plotOutput function is expecting 
+  output$tseriesplot <- renderPlot({
+    data=df()
+    #data[[get(input$datevar)]]=as.Date(data[[get(input$datevar)]], "%d/%m/%Y")
+    data[,input$datevar]=as.Date(data[,input$datevar],"%d/%m/%Y")
+    ggplot(data = data, aes_string(x = input$datevar, y = input$tsvar)) +
+    geom_line()+scale_x_date(date_labels = "%b %y")
+    #x <- df()[, c(input$datevar, input$tsvar)]
+    #plot(x)
+  })
+  
+  
+  #Create file content table
+  output$contents <- renderTable({
+    # input$file1 will be NULL initially. After the user selects
+    # and uploads a file, it will be a data frame with 'name',
+    # 'size', 'type', and 'datapath' columns. The 'datapath'
+    # column will contain the local filenames where the data can
+    # be found.
+    #inFile <- input$file1
+    
+    if (is.null(df()))
+      return(NULL)
+    
+    df()
+  })
+  output$evaluation <- renderTable({
+    train.data=df()[1:ceiling(nrow(df())*input$train.size/100),c(input$datevar,input$tsvar)]
+    test.data=df()[(ceiling(nrow(df())*input$train.size/100)+1):nrow(df()),c(input$datevar,input$tsvar)]
+    names(train.data)=c("ds","y")
+    names(test.data)=c("ds","y")
+    train.data$ds=format(as.Date(train.data$ds,"%d/%m/%Y"))
+    test.data$ds=format(as.Date(test.data$ds,"%d/%m/%Y"))
+    
+    m_prophet <- prophet(train.data)
+    future <- make_future_dataframe(m_prophet, periods = (100-input$train.size)*nrow(df())/100)
+    forecast <- predict(m_prophet, future)
+    forecast$ds=format(forecast$ds)
+    # Function that returns Root Mean Squared Error
+    rmse <- function(error)
+    {
+      sqrt(mean(error^2))
+    }
+    
+    # Function that returns Mean Absolute Error
+    mae <- function(error)
+    {
+      mean(abs(error))
+    }
+    error=forecast[(ceiling(nrow(df())*input$train.size/100)+1):nrow(df()),'yhat']-test.data$y
+    results=data.frame("RMSE"=rmse(error),"MAE"=mae(error), "Training %"=paste0(input$train.size,"%"),
+                       "Count Train"=nrow(train.data),"Count Test"=nrow(test.data), "Count Forecast"=nrow(forecast),
+                       "Count df()"=nrow(df()))
+    })
+  
+  
+  output$forecasting <- renderTable({
+  data=df()[,c(input$datevar,input$tsvar)]
+  names(data)=c("ds","y")
+  data$ds=format(as.Date(data$ds,"%d/%m/%Y"))
+  
+   m_prophet <- prophet(data)
+   future <- make_future_dataframe(m_prophet, periods = input$horizon)
+   forecast <- predict(m_prophet, future)
+   forecast$ds=format(forecast$ds)
+   tail(forecast[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')],input$horizon)
+
+  })
+  
+  df <- reactive({
+    req(input$file1)
+    read.csv(input$file1$datapath, header = input$header)
+  })
+  
+  observeEvent(df(), {
+    updateSelectInput(session, "datevar", choices=colnames(df()))
+    updateSelectInput(session, "tsvar", choices=colnames(df()), selected = colnames(df())[2])
+  })
+  
+}
+
+# Create Shiny app object
+shinyApp(ui = ui, server = server)
