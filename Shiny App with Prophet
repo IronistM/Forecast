@@ -33,7 +33,7 @@ ui <- fluidPage(
       
       # Select variable for date 
       selectInput(inputId = "datevar", 
-                  label = "Date:",
+                  label = "Date (format:YYYY-MM-DD):",
                   choices = names(df)),
       
       # Select variable for Time Series 
@@ -54,6 +54,7 @@ ui <- fluidPage(
                   value = 80),
       # Built with Shiny by RStudio
       br(),
+      h5(a("George Kourogiorgas Github repos",     href="https://github.com/gkourogiorgas", target="_blank")),
       h5("Built with",
          img(src = "https://www.rstudio.com/wp-content/uploads/2014/04/shiny.png", height = "30px"),
          "by",
@@ -90,12 +91,10 @@ server <- function(input, output, session) {
    # Create scatterplot object the plotOutput function is expecting 
   output$tseriesplot <- renderPlot({
     data=df()
-    #data[[get(input$datevar)]]=as.Date(data[[get(input$datevar)]], "%d/%m/%Y")
-    data[,input$datevar]=as.Date(data[,input$datevar],"%d/%m/%Y")
+    data[,input$datevar]=as.Date(data[,input$datevar])
     ggplot(data = data, aes_string(x = input$datevar, y = input$tsvar)) +
     geom_line()+scale_x_date(date_labels = "%b %y")
-    #x <- df()[, c(input$datevar, input$tsvar)]
-    #plot(x)
+    
   })
   
   
@@ -118,8 +117,8 @@ server <- function(input, output, session) {
     test.data=df()[(ceiling(nrow(df())*input$train.size/100)+1):nrow(df()),c(input$datevar,input$tsvar)]
     names(train.data)=c("ds","y")
     names(test.data)=c("ds","y")
-    train.data$ds=format(as.Date(train.data$ds,"%d/%m/%Y"))
-    test.data$ds=format(as.Date(test.data$ds,"%d/%m/%Y"))
+    train.data$ds=format(as.Date(train.data$ds))
+    test.data$ds=format(as.Date(test.data$ds))
     
     m_prophet <- prophet(train.data)
     future <- make_future_dataframe(m_prophet, periods = (100-input$train.size)*nrow(df())/100)
@@ -146,7 +145,7 @@ server <- function(input, output, session) {
   output$forecasting <- renderTable({
   data=df()[,c(input$datevar,input$tsvar)]
   names(data)=c("ds","y")
-  data$ds=format(as.Date(data$ds,"%d/%m/%Y"))
+  data$ds=format(as.Date(data$ds))
   
    m_prophet <- prophet(data)
    future <- make_future_dataframe(m_prophet, periods = input$horizon)
