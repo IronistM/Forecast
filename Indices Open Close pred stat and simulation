@@ -1,0 +1,117 @@
+library(quantmod)
+library(readxl)
+library(forecast)
+library(dplyr)
+library(prophet)
+library(rstan)
+library(Hmisc)
+library(caret)
+
+# Initialize symbols, models,constants and results
+symbols <- c("^FTMC","^FTSE","^FTAI","^GSPC","^DJI","^N225","^HSI","^GDAXI","^FCHI")
+stmodels=c("prophet","stlf","ses","holt","hw","thetaf","ets","auto.arima","tbats")
+results=list()
+res=list()
+tsfreq=5
+daysback=150
+horizon=1
+
+#Run all models for each symbol
+for (m in 1:length(symbols)){
+  print(symbols[m])
+  #Get data for symbol
+  my.df <- getSymbols(Symbols = symbols[m], auto.assign = FALSE)
+  my.df=na.approx(my.df)
+  difvar=100*(my.df[,4]-my.df[,1])/my.df[,1]
+  data<-as.data.frame(difvar)
+  dframe=data.frame(ds=as.Date(rownames(data)),y=data[,1])
+  start=nrow(dframe)-daysback
+  end=nrow(dframe)
+  actual_sign=data.frame(act=sign(dframe$y),date=dframe$ds)
+  #Run each model for m symbol
+  for (k in 1:length(stmodels)){
+    print(stmodels[k])
+    str1=paste0(stmodels[k],"_f=data.frame()")
+    str2=paste0("res[['",stmodels[k],"']]=list()")
+    str3=paste0(str1,";",str2)
+    eval(parse(text=str3))
+    
+    #If model is prophet...  
+    if (stmodels[k]=="prophet"){
+      ##Prophet data prep
+      for (i in start:end){
+        print("----------------------------------------------New Prediction---------------------------------------------------")
+        print("Up to:")
+        print(dframe$ds[i])
+        print(max(as.Date(dframe[1:i,"ds"])))
+        m_prophet <- prophet(dframe[1:i,])
+        future <- make_future_dataframe(m_prophet, periods = horizon)
+        f_prophet <- predict(m_prophet, future)
+        print("Prediction for:")
+        print(nrow(f_prophet))
+        print(future[nrow(future),"ds"])
+        print(f_prophet[nrow(f_prophet),"yhat"])
+        prophet_f[i-start+1,"yhat"]=f_prophet$yhat[NROW(f_prophet$yhat)]
+        if (weekdays(as.Date(future[nrow(future),]))=="Saturday"){
+          prophet_f[i-start+1,"ds"]=future[nrow(future),]+(60*60*24*2)
+        } else {
+          prophet_f[i-start+1,"ds"]=future[nrow(future),]
+        }
+      
+        prophet_f$ds=as.POSIXct(prophet_f$ds,origin='1970-01-01 00:00.00 UTC')
+      }
+      prophet_f_sign=data.frame(pred=sign(prophet_f$yhat),date=prophet_f$ds)
+      resprophet=data.frame(date=actual_sign$date[(start+1):end],
+                            comp=prophet_f_sign$pred[-nrow(prophet_f_sign)]==actual_sign$act[(start+1):end],
+                            actual=dframe$y[(start+1):end],
+                            forecast=prophet_f$yhat[-nrow(prophet_f)]
+                            )
+      res[["prophet"]][["histcomp"]]=resprophet
+      res[["prophet"]][["accuracy"]]=100*sum(resprophet$comp)/nrow(resprophet["comp"])
+      res[["prophet"]][["predictions"]]=data.frame(Next_day_pred=prophet_f$yhat,Until_date=dframe$ds[start:end],For_date=prophet_f$ds)
+      
+    } else {
+      ##Forecast data prep
+      print(stmodels[k])
+      x=pull(data,1)  
+      for (j in start:end){
+        print(j)
+        train.x = ts(x[1:j], frequency=tsfreq)
+        str4=paste0("m_",stmodels[k]," = ",stmodels[k],"(train.x)")
+        str5=paste0("f_",stmodels[k]," = forecast(m_",stmodels[k],", h=1)")
+        str6=paste0(stmodels[k],"_f[j-start+1,'Next_day_pred']=f_",stmodels[k],"$mean[1:horizon]")
+        str7=paste0(stmodels[k],"_f[j-start+1,'Until_date']=as.Date(dframe$ds[j])")
+        str8=paste0("if (weekdays(as.Date(dframe$ds[j]))=='Friday'){",stmodels[k],"_f[j-start+1,'For_date']=as.Date(dframe$ds[j])+3} else {",stmodels[k],"_f[j-start+1,'For_date']=as.Date(dframe$ds[j])+1}")
+        str9=paste0(str4,";",str5,";",str6,";",str7,";",str8)
+        eval(parse(text=str9))
+        
+      }
+      str10=paste0(stmodels[k],"_f$Until_date=as.Date(",stmodels[k],"_f$Until_date, origin ='1970-01-01')")
+      str11=paste0(stmodels[k],"_f$For_date=as.Date(",stmodels[k],"_f$For_date, origin ='1970-01-01')")
+      str12=paste0(stmodels[k],"_f_sign=sign(",stmodels[k],"_f$Next_day_pred[-nrow(",stmodels[k],"_f)])")
+      str13=paste0("res",stmodels[k],"=data.frame(date=dframe$ds[(start+1):end],comp=(",stmodels[k],"_f_sign==actual_sign[(start+1):end,'act']),actual=dframe$y[(start+1):end],forecast=",stmodels[k],"_f$Next_day_pred[-nrow(",stmodels[k],"_f)])")
+      str14=paste0("res[['",stmodels[k],"']][['histcomp']]=res",stmodels[k])
+      str15=paste0("res[['",stmodels[k],"']][['accuracy']]=100*sum(res",stmodels[k],"$comp)/NROW(res",stmodels[k],"$comp)")
+      str16=paste0("res[['",stmodels[k],"']][['predictions']]=",stmodels[k],"_f")
+      eval(parse(text=paste0(str10,";",str11,";",str12,";",str13,";",str14,";",str15,";",str16)))
+      }
+    }
+  results[[m]]=res
+  }
+names(results)=symbols
+save(results, file="results.RData")
+maxaccuracy=list()
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+for (a in 1:length(symbols)){
+  symb=substrRight(symbols[a],nchar(symbols[a])-1)
+    str17=paste0(symb,"acc=sapply(stmodels, function(x){results[['",symbols[a],"']][[x]]['accuracy']})")
+    str18=paste0("names(",symb,"acc)=stmodels")
+    str19=paste0(symb,"maxacc=data.frame(technique=names(",symb,"acc[which(",symb,"acc>50)]),
+                      accuracy=sapply(names(",symb,"acc[which(",symb,"acc>50)]),function(x){as.numeric(",symb,"acc[x])}),
+                      stringsAsFactors = F)")
+  str20=paste0("maxaccuracy[['",symbols[a],"']]=",symb,"maxacc")
+  eval(parse(text=paste0(str17,";",str18,";",str19,";",str20)))
+}
+save(results,maxaccuracy, file="results.RData")
