@@ -103,22 +103,25 @@ for (m in 1:length(symbols)){
       eval(parse(text=paste0(str10,";",str11,";",str12,";",str13,";",str14,";",str15,";",str16,";",str17)))
     }
   }
-  #results[[m]]=res
 }
-names(results)=symbols
-save(results, file="results.RData")
-maxaccuracy=list()
+
 substrRight <- function(x, n){
   substr(x, nchar(x)-n+1, nchar(x))
 }
 for (a in 1:length(symbols)){
   symb=substrRight(symbols[a],nchar(symbols[a])-1)
-  str17=paste0(symb,"acc=sapply(stmodels, function(x){results[['",symbols[a],"']][[x]]['accuracy']})")
-  str18=paste0("names(",symb,"acc)=stmodels")
-  str19=paste0(symb,"maxacc=data.frame(technique=names(",symb,"acc[which(",symb,"acc>50)]),
-               accuracy=sapply(names(",symb,"acc[which(",symb,"acc>50)]),function(x){as.numeric(",symb,"acc[x])}),
-               stringsAsFactors = F)")
-  str20=paste0("maxaccuracy[['",symbols[a],"']]=",symb,"maxacc")
-  eval(parse(text=paste0(str17,";",str18,";",str19,";",str20)))
+  str18=paste0(symb,"acc=list()")
+  str19=paste0(symb,"acc[['accuracy']]=sapply(stmodels, function(x){results[['",symbols[a],"']][[x]]['accuracy']})")
+  str20=paste0(symb,"acc[['pred']]=sapply(stmodels, function(x){tail(results[['",symbols[a],"']][[x]][['predictions']]['Next_day_pred'],1)})")
+  str21=paste0("names(",symb,"acc[['accuracy']])=stmodels")
+  str22=paste0("names(",symb,"acc[['pred']])=stmodels")
+  str23=paste0(symb,"maxacc=data.frame(technique=names(",symb,"acc[['accuracy']][which(",symb,"acc[['accuracy']]>50)]),
+               accuracy=sapply(names(",symb,"acc[['accuracy']][which(",symb,"acc[['accuracy']]>50)]),function(x){as.numeric(",symb,"acc[['accuracy']][x])}),
+               forecast=sapply(names(",symb,"acc[['accuracy']][which(",symb,"acc[['accuracy']]>50)]),function(x){sign(as.numeric(",symb,"acc[['pred']][x]))}),
+               For_date=sapply(names(",symb,"acc[['accuracy']][which(",symb,"acc[['accuracy']]>50)]),function(x){as.Date(tail(results[['",symbols[a],"']][[x]][['predictions']][['For_date']],1), origin ='1970-01-01')}),
+               stringsAsFactors = F)") 
+  str24=paste0("if (!is.null(",symb,"maxacc$For_date)){",symb,"maxacc$For_date=as.Date(",symb,"maxacc$For_date, origin ='1970-01-01')}")
+  str25=paste0("decisions[['",symbols[a],"']]=",symb,"maxacc")
+  eval(parse(text=paste0(str18,";",str19,";",str20,";",str21,";",str22,";",str23,";",str24,";",str25)))
 }
-save(results,maxaccuracy, file="results.RData")
+save(results,decisions, file="results.RData")
