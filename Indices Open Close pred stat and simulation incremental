@@ -8,7 +8,7 @@ library(Hmisc)
 library(caret)
 
 # Initialize symbols, models,constants and results
-symbols <- c("^FTMC","^FTSE","^FTAI","^GSPC","^DJI","^N225","^HSI","^GDAXI","^FCHI")
+symbols <- c("^FTMC","^FTSE","^FTAI","^GSPC","^DJI","^N225","^HSI","^GDAXI","^FCHI","^STOXX50E")
 stmodels=c("prophet","stlf","ses","holt","hw","thetaf","ets","auto.arima","tbats")
 results=list()
 res=list()
