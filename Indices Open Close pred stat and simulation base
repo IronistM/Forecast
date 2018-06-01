@@ -13,7 +13,7 @@ stmodels=c("prophet","stlf","ses","holt","hw","thetaf","ets","auto.arima","tbats
 results=list()
 res=list()
 tsfreq=5
-daysback=365
+daysback=395
 horizon=1
 
 #Run all models for each symbol
@@ -99,7 +99,7 @@ for (m in 1:length(symbols)){
   results[[m]]=res
   }
 names(results)=symbols
-save(results, file="results.RData")
+
 decisions=list()
 substrRight <- function(x, n){
   substr(x, nchar(x)-n+1, nchar(x))
