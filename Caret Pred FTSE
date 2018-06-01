@@ -1,0 +1,82 @@
+start_time <- Sys.time()
+library(quantmod)
+library(Hmisc)
+library(caret)
+library(parallel)
+library(doParallel)
+
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+daysback=365
+lags=365
+mlmodels=c("rf","knn")
+my.df <- getSymbols(Symbols = "^FTSE", auto.assign = FALSE)
+my.df=na.approx(my.df)
+difvar=100*(my.df[,4]-my.df[,1])/my.df[,1]
+data<-as.data.frame(difvar)
+dframe=data.frame(ds=as.Date(rownames(data)),y=sign(data[,1]))
+for (i in 1:lags) {
+  eval(parse(text=paste0("dframe$y",i,"=Lag(dframe$y, +",i,")")))
+}
+dframe$year=as.numeric(format(dframe$ds,"%Y"))
+dframe$month=as.numeric(format(dframe$ds,"%m"))
+dframe$day=as.numeric(format(dframe$ds,"%d"))
+dframe$dow=as.numeric(factor(weekdays(dframe$ds), levels = c("Monday", "Tuesday", "Wednesday", 
+                                                             "Thursday", "Friday", "Saturday", "Sunday"),
+                             ordered = TRUE))
+mldframe=dframe[complete.cases(dframe),]
+mldframe$y=as.factor(mldframe$y)
+start=nrow(mldframe)-daysback
+end=nrow(mldframe)
+actual_sign=data.frame(act=sign(dframe$y),date=dframe$ds)
+
+#Run each model for m symbol
+
+res=list()
+f_rf=as.numeric()
+##Forecast data prep
+for (j in start:end){
+  print(j)
+  mldframetmp=mldframe[1:j,]
+  mldframetmpnd=data.frame(row.names=mldframetmp[j,"ds"])
+  mldframetmpnd$y1=as.numeric(mldframetmp$y[j])
+  for (i in 2:lags) {
+    eval(parse(text=paste0("mldframetmpnd$y",i,"[1]=mldframetmp[j,'y",(i-1),"']")))
+  }
+  if (mldframe$dow[j]==5)
+  {
+    mldframetmpnd$year[1]=as.numeric(format(mldframetmp$ds[j]+3,"%Y"))
+    mldframetmpnd$month[1]=as.numeric(format(mldframetmp$ds[j]+3,"%m"))
+    mldframetmpnd$day[1]=as.numeric(format(mldframetmp$ds[j]+3,"%d"))
+    mldframetmpnd$dow[1]=as.numeric(factor(weekdays(mldframetmp$ds[j]+3), levels = c("Monday", "Tuesday", "Wednesday", 
+                                                                                     "Thursday", "Friday", "Saturday", "Sunday"),
+                                           ordered = TRUE))
+  }else{
+    mldframetmpnd$year[1]=as.numeric(format(mldframetmp$ds[j]+1,"%Y"))
+    mldframetmpnd$month[1]=as.numeric(format(mldframetmp$ds[j]+1,"%m"))
+    mldframetmpnd$day[1]=as.numeric(format(mldframetmp$ds[j]+1,"%d"))
+    mldframetmpnd$dow[1]=as.numeric(factor(weekdays(mldframetmp$ds[j]+1), levels = c("Monday", "Tuesday", "Wednesday", 
+                                                                                     "Thursday", "Friday", "Saturday", "Sunday"),
+                                           ordered = TRUE))
+  }
+  mldframetmp=mldframetmp[-1]
+  m_rf = train(y~., data=mldframetmp, method="gbm")
+  f_rf[j-start+1] = predict(m_rf, mldframetmpnd)
+}
+rf_f=list(Historic=data.frame(Date=mldframe$ds[(start+1):end],
+                              Forecast=f_rf[-NROW(f_rf)],
+                              ActualSign=actual_sign$act[which(actual_sign$date %in% as.Date(mldframe$ds[(start+1):end], origin ="1970-01-01"))],
+                              ActualDate=actual_sign$date[which(actual_sign$date %in% as.Date(mldframe$ds[(start+1):end], origin ="1970-01-01"))]),
+          NextDay=data.frame(Forecast=as.numeric(f_rf[NROW(f_rf)]),
+                             ForecastDate=if (weekdays(as.Date(mldframe$ds[nrow(mldframe)]))=="Friday"){
+                               mldframe$ds[nrow(mldframe)]+3
+                             } else {
+                               mldframe$ds[nrow(mldframe)]+1
+                             }))
+rf_f$Historic$Forecast[rf_f$Historic$Forecast == 3] <- 1
+accuracy=100*sum(rf_f$Historic$Forecast==rf_f$Historic$ActualSign)/NROW(rf_f$Historic$Forecast)
+end_time <- Sys.time()
+
+(end_time - start_time)/60
+stopCluster(cluster)
